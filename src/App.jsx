@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Home, Radio, LayoutGrid, BarChart3, Download, ChevronDown, X, Wifi, RefreshCw, FileSpreadsheet, FileText } from 'lucide-react';
 
@@ -7,6 +7,8 @@ const qs = o => new URLSearchParams(Object.fromEntries(Object.entries(o).filter(
 const dl = p => { window.location.href = '/api/export?' + qs(p); };
 const D = 'Tanggal Transaksi', BO = 'Branch Office', UK = 'Unit Kerja';
 const LIVE_COLS = ['Timestamp', D, BO, 'Kode Uker', UK, 'Jenis Uker', 'Bank Tujuan', 'Status'];
+const ALL_COLS = ['Timestamp', D, BO, 'Kode Uker', UK, 'Jenis Uker', 'Pengirim - Nomor Rekening', 'Pengirim - Nama Rekening', 'Bank Tujuan', 'Penerima - Nomor Rekening', 'Penerima - Nama Rekening', 'Nomor HP', 'Nominal', 'Status'];
+const MCOLS = LIVE_COLS.filter(c => c !== 'Kode Uker');
 const ST = ['Berhasil', 'Gagal Dibelokkan', 'Gagal Tidak Punya Rekening'];
 const CLS = { Berhasil: 'ok', 'Gagal Dibelokkan': 'bad', 'Gagal Tidak Punya Rekening': 'warn' };
 const HEX = { Berhasil: '#16a34a', 'Gagal Dibelokkan': '#dc2626', 'Gagal Tidak Punya Rekening': '#f97316' };
@@ -32,22 +34,98 @@ function Dl2({ p, size = 15 }) {
   );
 }
 
+function Combo({ label, value, options, all, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef(null);
+  useEffect(() => {
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+  const list = options.filter(o => o.toLowerCase().includes(q.trim().toLowerCase()));
+  const pick = v => { onChange(v); setOpen(false); };
+  return (
+    <div className="combo" ref={ref}>
+      <small>{label}</small>
+      <button type="button" className="comboBtn" onClick={() => { setOpen(!open); setQ(''); }}>
+        <span className={value ? '' : 'ph'}>{value || all}</span><ChevronDown size={15} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div className="comboPanel" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }}>
+            <input autoFocus placeholder={`Cari ${label.toLowerCase()}...`} value={q} onChange={e => setQ(e.target.value)} />
+            <div className="comboList">
+              <div className={'opt' + (!value ? ' on' : '')} onClick={() => pick('')}>{all}</div>
+              {list.map(o => <div key={o} className={'opt' + (o === value ? ' on' : '')} onClick={() => pick(o)}>{o}</div>)}
+              {!list.length && <div className="opt none">Tidak ditemukan</div>}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function Modal({ title, sub, onClose, actions, children }) {
+  return (
+    <motion.div className="overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+      <motion.div className="modal card" initial={{ scale: 0.94, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.94, y: 20 }} onClick={e => e.stopPropagation()}>
+        <div className="row">
+          <div><h3>{title}</h3><p className="muted" style={{ margin: 0 }}>{sub}</p></div>
+          <span className="grow" />
+          {actions}
+          <button className="btn icon" onClick={onClose}><X size={16} /></button>
+        </div>
+        {children}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function DlBtns({ p }) {
+  return (
+    <>
+      <button className="btn primary" onClick={() => dl({ ...p, format: 'xlsx' })}><FileSpreadsheet size={15} /> Excel</button>
+      <button className="btn" onClick={() => dl({ ...p, format: 'pdf' })}><FileText size={15} /> PDF</button>
+    </>
+  );
+}
+
+function Grid({ head, rows }) {
+  return (
+    <div className="tableWrap">
+      <table>
+        <thead><tr><th>#</th>{head.map(h => <th key={h}>{h}</th>)}</tr></thead>
+        <tbody>
+          {rows.map((r, i) => <tr key={i}><td>{i + 1}</td>{r.map((v, j) => <td key={j}>{v}</td>)}</tr>)}
+          {!rows.length && <tr><td colSpan={head.length + 1} className="empty">Belum ada data</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function breakdown(data, uker) {
+  const m = {};
+  data.forEach(r => {
+    const k = uker ? r[BO] + '|' + r[UK] : r[BO];
+    const x = (m[k] ??= { key: uker ? [r[BO], r[UK]] : [r[BO]], t: 0, ...zero() });
+    x.t++; if (ST.includes(r.Status)) x[r.Status]++;
+  });
+  return Object.values(m).sort((a, b) => b.t - a.t).map(x => [...x.key, x.t, ...ST.map(s => x[s])]);
+}
+
 function Filters({ f, set, rows, units, bos, uker = false, status = false, extra }) {
   const ukers = [...new Set([...units.filter(u => !f.bo || u.bo === f.bo).map(u => u.uker), ...rows.filter(r => !f.bo || r[BO] === f.bo).map(r => r[UK])].filter(Boolean))].sort();
-  const up = k => e => set({ ...f, [k]: e.target.value, ...(k === 'bo' ? { uker: '' } : {}) });
+  const up = (k, v) => set({ ...f, [k]: v, ...(k === 'bo' ? { uker: '' } : {}) });
   return (
     <div className="card filters">
-      <label>Tanggal Awal<input type="date" value={f.from} onChange={up('from')} /></label>
-      <label>Tanggal Akhir<input type="date" value={f.to} onChange={up('to')} /></label>
-      <label>Branch Office
-        <select value={f.bo} onChange={up('bo')}><option value="">Semua BO</option>{bos.map(b => <option key={b}>{b}</option>)}</select>
-      </label>
-      {uker && <label>Unit Kerja
-        <select value={f.uker} onChange={up('uker')}><option value="">Semua Uker</option>{ukers.map(b => <option key={b}>{b}</option>)}</select>
-      </label>}
-      {status && <label>Status
-        <select value={f.status} onChange={up('status')}><option value="">Semua</option>{ST.map(s => <option key={s}>{s}</option>)}</select>
-      </label>}
+      <label>Tanggal Awal<input type="date" value={f.from} onChange={e => up('from', e.target.value)} /></label>
+      <label>Tanggal Akhir<input type="date" value={f.to} onChange={e => up('to', e.target.value)} /></label>
+      <Combo label="Branch Office" all="Semua BO" value={f.bo} options={bos} onChange={v => up('bo', v)} />
+      {uker && <Combo label="Unit Kerja" all="Semua Uker" value={f.uker} options={ukers} onChange={v => up('uker', v)} />}
+      {status && <Combo label="Status" all="Semua Status" value={f.status} options={ST} onChange={v => up('status', v)} />}
       {extra && <div className="filtersExtra">{extra}</div>}
     </div>
   );
@@ -87,7 +165,7 @@ function HomePage({ rows, go }) {
   );
 }
 
-function Table({ data, cols = LIVE_COLS }) {
+function Table({ data, cols = ALL_COLS }) {
   return (
     <div className="tableWrap">
       <table>
@@ -109,31 +187,49 @@ function Table({ data, cols = LIVE_COLS }) {
 function LivePage({ rows, units, bos, updated, refresh }) {
   const [f, set] = useState({ from: '', to: '', bo: '', uker: '', status: '' });
   const [q, setQ] = useState('');
+  const [view, setView] = useState(null);
   const data = useMemo(() => {
     const k = q.trim().toLowerCase();
     return filterRows(rows, f).filter(r => !k || Object.values(r).join(' ').toLowerCase().includes(k)).reverse();
   }, [rows, f, q]);
   const n = s => data.filter(r => r.Status === s).length;
-  const chips = [['Total Response', data.length], ...ST.map(s => [s, n(s)]), ['Total BO', new Set(data.map(r => r[BO])).size], ['Total Uker', new Set(data.map(r => r[UK])).size]];
+  const chips = [['Total Response', data.length, 'all'], ...ST.map(s => [s, n(s), s]), ['Total BO', new Set(data.map(r => r[BO])).size, 'bo'], ['Total Uker', new Set(data.map(r => r[UK])).size, 'uker']];
   const p = { ...f, q };
+  const isRows = view && view !== 'bo' && view !== 'uker';
+  const vrows = isRows ? (view === 'all' ? data : data.filter(r => r.Status === view)) : [];
+  const title = { all: 'Total Response', bo: 'Total BO', uker: 'Total Uker' }[view] || view;
   return (
     <motion.div {...page}>
       <Filters f={f} set={set} rows={rows} units={units} bos={bos} uker status extra={<>
         <button className="btn" onClick={refresh}><RefreshCw size={14} /> Refresh</button>
         <span className="grow" /><span className="liveTxt">● LIVE • {updated}</span></>} />
       <h2 className="title">Live Response</h2>
-      <p className="muted">Data laporan RTGS langsung dari Google Sheets • {rows.length} baris terbaca dari sheet.</p>
+      <p className="muted">Data laporan RTGS langsung dari Google Sheets • {rows.length} baris terbaca dari sheet. Klik kotak ringkasan untuk melihat datanya.</p>
       <div className="chips">
-        {chips.map(([l, v], i) => <motion.div key={l} className="chip" {...stagger(i)}><small>{l}</small><b>{v}</b></motion.div>)}
+        {chips.map(([l, v, k], i) => (
+          <motion.button key={l} className="chip" {...stagger(i)} whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }} onClick={() => setView(k)}>
+            <small>{l}</small><b>{v}</b>
+          </motion.button>
+        ))}
       </div>
       <div className="card dlCard">
-        <div><h3>Download Data</h3><p className="muted">Unduh {data.length} baris sesuai filter & pencarian saat ini</p></div>
+        <div><h3>Download Data</h3><p className="muted">Unduh {data.length} baris (semua kolom) sesuai filter & pencarian saat ini</p></div>
         <span className="grow" />
         <button className="btn primary" onClick={() => dl({ ...p, format: 'xlsx' })}><FileSpreadsheet size={15} /> XLSX</button>
         <button className="btn" onClick={() => dl({ ...p, format: 'pdf' })}><FileText size={15} /> PDF</button>
       </div>
-      <input className="search" placeholder="Cari BO, unit kerja, bank..." value={q} onChange={e => setQ(e.target.value)} />
+      <input className="search" placeholder="Cari BO, unit kerja, nama, bank..." value={q} onChange={e => setQ(e.target.value)} />
       <div className="card"><Table data={data} /></div>
+      <AnimatePresence>
+        {view && (
+          <Modal title={title} sub={isRows ? `${vrows.length} laporan` : 'Rincian jumlah laporan'} onClose={() => setView(null)}
+            actions={isRows && <DlBtns p={{ ...p, ...(view !== 'all' ? { status: view } : {}) }} />}>
+            {isRows && <Table data={vrows} />}
+            {view === 'bo' && <Grid head={['Branch Office', 'Total', ...ST]} rows={breakdown(data, false)} />}
+            {view === 'uker' && <Grid head={['Branch Office', 'Unit Kerja', 'Total', ...ST]} rows={breakdown(data, true)} />}
+          </Modal>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -142,26 +238,31 @@ function MonitoringPage({ rows, units, bos }) {
   const [f, set] = useState({ from: '', to: '', bo: '', uker: '' });
   const [q, setQ] = useState('');
   const [open, setOpen] = useState({});
-  const [modal, setModal] = useState(null);
+  const [m, setM] = useState(null);
   const k = q.trim().toLowerCase();
   const tree = useMemo(() => {
     const t = Object.fromEntries(bos.map(b => [b, {}]));
     const add = (b, u) => (t[b] ? (t[b][u] ??= zero()) : null);
     units.filter(u => (!f.bo || u.bo === f.bo) && (!f.uker || u.uker === f.uker)).forEach(u => add(u.bo, u.uker));
-    filterRows(rows, f).forEach(r => { const m = add(r[BO], r[UK]); if (m && r.Status in m) m[r.Status]++; });
+    filterRows(rows, f).forEach(r => { const x = add(r[BO], r[UK]); if (x && r.Status in x) x[r.Status]++; });
     return Object.entries(t)
       .filter(([b]) => !f.bo || b === f.bo)
       .map(([b, us]) => [b, Object.entries(us).filter(([u]) => !k || b.toLowerCase().includes(k) || u.toLowerCase().includes(k)).sort(([a], [c]) => a.localeCompare(c))])
       .filter(([, l]) => (!k && !f.uker) || l.length);
   }, [rows, units, bos, f, k]);
   const all = tree.flatMap(([, l]) => l.map(([, v]) => v));
-  const cards = [['Branch Office', tree.length, ''], ['Unit Kerja', all.length, ''], ...ST.map(s => [s, all.reduce((x, v) => x + v[s], 0), CLS[s]])];
-  const mp = modal && { from: f.from, to: f.to, bo: modal.bo, uker: modal.uker, status: modal.status };
-  const mrows = modal ? filterRows(rows, mp).reverse() : [];
+  const sumS = s => all.reduce((x, v) => x + v[s], 0);
+  const base = { from: f.from, to: f.to };
+  const cards = [['Branch Office', tree.length, '', { kind: 'bo' }], ['Unit Kerja', all.length, '', { kind: 'uker' }],
+    ...ST.map(s => [s, sumS(s), CLS[s], { kind: 'rows', title: s, sub: 'Semua BO dan unit kerja pada filter saat ini', card: true, filter: { ...base, bo: f.bo, uker: f.uker, status: s } }])];
+  const vis = new Set(tree.flatMap(([b, l]) => l.map(([u]) => b + '|' + u)));
+  const mrows = m && m.kind === 'rows' ? filterRows(rows, m.filter).filter(r => !m.card || vis.has(r[BO] + '|' + r[UK])).reverse() : [];
+  const dp = m && m.kind === 'rows' ? { ...m.filter, ...(m.card && k ? { q: k } : {}) } : null;
+  const openRows = (title, sub, filter) => setM({ kind: 'rows', title, sub, filter });
   return (
     <motion.div {...page}>
       <h2 className="title">Monitoring Dashboard</h2>
-      <p className="muted">Jumlah laporan RTGS per Branch Office dan Unit Kerja. Klik BO untuk melihat unit kerjanya, klik kotak jumlah untuk melihat laporannya.</p>
+      <p className="muted">Jumlah laporan RTGS per Branch Office dan Unit Kerja. Klik BO untuk melihat unit kerjanya, klik angka status untuk melihat laporannya.</p>
       <Filters f={f} set={set} rows={rows} units={units} bos={bos} uker extra={<>
         <input className="search inline" placeholder="Cari BO atau unit kerja..." value={q} onChange={e => setQ(e.target.value)} />
         <span className="grow" />
@@ -171,7 +272,11 @@ function MonitoringPage({ rows, units, bos }) {
         <div className="legend" style={{ width: '100%' }}><b>Keterangan</b>
           {ST.map(s => <span className="lg" key={s}><i className={CLS[s]} />{s}</span>)}</div></>} />
       <div className="stats five">
-        {cards.map(([t, v, c], i) => <motion.div key={t} className="card stat" {...stagger(i)}><small>{t}</small><b className={c}>{v}</b></motion.div>)}
+        {cards.map(([t, v, c, mm], i) => (
+          <motion.div key={t} className="card stat click" {...stagger(i)} whileHover={{ y: -4 }} onClick={() => setM(mm)}>
+            <small>{t}</small><b className={c}>{v}</b><span>klik untuk detail</span>
+          </motion.div>
+        ))}
       </div>
       <div className="card list">
         {tree.map(([bo, list]) => (
@@ -180,10 +285,14 @@ function MonitoringPage({ rows, units, bos }) {
               <button className="boToggle" onClick={() => setOpen({ ...open, [bo]: !open[bo] })}>
                 <motion.span animate={{ rotate: open[bo] ? 180 : 0 }}><ChevronDown size={18} /></motion.span>
                 <b>{bo}</b><small>{list.length} unit kerja</small>
-                <span className="grow" />
-                {ST.map(s => <span key={s} className={'pill ' + CLS[s]} title={s}>{list.reduce((x, [, v]) => x + v[s], 0)}</span>)}
               </button>
-              <Dl2 p={{ from: f.from, to: f.to, bo, type: 'summary' }} />
+              <div className="boPills">
+                {ST.map(s => (
+                  <motion.button key={s} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }} className={'pill pillBtn ' + CLS[s]} title="Klik untuk melihat laporan"
+                    onClick={() => openRows(bo, s, { ...base, bo, status: s })}>{s}: {list.reduce((x, [, v]) => x + v[s], 0)}</motion.button>
+                ))}
+              </div>
+              <Dl2 p={{ ...base, bo, type: 'summary' }} />
             </div>
             <AnimatePresence initial={false}>
               {open[bo] && (
@@ -192,9 +301,9 @@ function MonitoringPage({ rows, units, bos }) {
                     <div className="unit" key={uk}>
                       <span>{uk}</span><span className="grow" />
                       {ST.map(s => (
-                        <motion.button key={s} whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.96 }} className={'box ' + CLS[s]} onClick={() => setModal({ bo, uker: uk, status: s })}><b>{v[s]}</b>{s}</motion.button>
+                        <motion.button key={s} whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.96 }} className={'box ' + CLS[s]} onClick={() => openRows(`${bo} • ${uk}`, s, { ...base, bo, uker: uk, status: s })}><b>{v[s]}</b>{s}</motion.button>
                       ))}
-                      <Dl2 p={{ from: f.from, to: f.to, bo, uker: uk, nocode: 1 }} />
+                      <Dl2 p={{ ...base, bo, uker: uk }} />
                     </div>
                   ))}
                   {!list.length && <p className="empty">Belum ada unit kerja</p>}
@@ -206,19 +315,14 @@ function MonitoringPage({ rows, units, bos }) {
         {!tree.length && <p className="empty">Belum ada data</p>}
       </div>
       <AnimatePresence>
-        {modal && (
-          <motion.div className="overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)}>
-            <motion.div className="modal card" initial={{ scale: 0.94, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.94, y: 20 }} onClick={e => e.stopPropagation()}>
-              <div className="row">
-                <div><h3>{modal.bo} • {modal.uker}</h3><p className="muted"><span className={'pill ' + CLS[modal.status]}>{modal.status}</span> • {mrows.length} laporan</p></div>
-                <span className="grow" />
-                <button className="btn primary" onClick={() => dl({ ...mp, format: 'xlsx', nocode: 1 })}><FileSpreadsheet size={15} /> Excel</button>
-                <button className="btn" onClick={() => dl({ ...mp, format: 'pdf', nocode: 1 })}><FileText size={15} /> PDF</button>
-                <button className="btn icon" onClick={() => setModal(null)}><X size={16} /></button>
-              </div>
-              <Table data={mrows} cols={LIVE_COLS.filter(c => c !== 'Kode Uker')} />
-            </motion.div>
-          </motion.div>
+        {m && (
+          <Modal title={m.kind === 'bo' ? 'Branch Office' : m.kind === 'uker' ? 'Unit Kerja' : m.title}
+            sub={m.kind === 'rows' ? <><span className={'pill ' + CLS[m.filter.status]}>{m.filter.status}</span> • {mrows.length} laporan{m.sub && m.card ? ' • ' + m.sub : ''}</> : m.kind === 'bo' ? `${tree.length} Branch Office` : `${all.length} Unit Kerja`}
+            onClose={() => setM(null)} actions={dp && <DlBtns p={dp} />}>
+            {m.kind === 'rows' && <Table data={mrows} cols={MCOLS} />}
+            {m.kind === 'bo' && <Grid head={['Branch Office', 'Jumlah Unit Kerja', ...ST]} rows={tree.map(([b, l]) => [b, l.length, ...ST.map(s => l.reduce((x, [, v]) => x + v[s], 0))])} />}
+            {m.kind === 'uker' && <Grid head={['Branch Office', 'Unit Kerja', ...ST]} rows={tree.flatMap(([b, l]) => l.map(([u, v]) => [b, u, ...ST.map(s => v[s])]))} />}
+          </Modal>
         )}
       </AnimatePresence>
     </motion.div>
@@ -334,7 +438,7 @@ export default function App() {
   const [state, setState] = useState({ rows: [], units: [], bos: [], error: '', updated: '--:--:--' });
   const load = useCallback(() => fetch('/api/data').then(async r => {
     const t = await r.text();
-    try { return JSON.parse(t); } catch { throw new Error(`API tidak membalas JSON (status ${r.status}). Pastikan folder api/ ikut ter-deploy.`); }
+    try { return JSON.parse(t); } catch { throw new Error(`API tidak membalas JSON (status ${r.status}). Lokal: pastikan server jalan (npm install lalu npm run dev, atau node server.js untuk melihat errornya). Vercel: pastikan folder api/ ikut ter-deploy.`); }
   }).then(d => {
     const t = new Date().toLocaleTimeString('id-ID');
     d.error ? setState(s => ({ ...s, error: d.error })) : setState({ rows: d.rows, units: d.units, bos: d.bos, error: '', updated: t });

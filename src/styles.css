@@ -121,3 +121,22 @@ b.warn{color:#ea580c}
 .stack{display:flex;height:14px;border-radius:7px;overflow:hidden;background:#eef2f7}
 .nums{display:flex;gap:8px;justify-content:flex-end;font-weight:700}
 @media(max-width:1000px){.grid3{grid-template-columns:1fr}.stats.five{grid-template-columns:1fr 1fr}.ukRow{grid-template-columns:1fr}}
+/* ===== v5 ===== */
+.filters{position:relative;z-index:6}
+.combo{position:relative;display:flex;flex-direction:column;gap:5px;flex:0 1 200px;min-width:150px}
+.combo>small{font-size:11px;font-weight:600;color:var(--muted)}
+.comboBtn{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--navy);cursor:pointer;text-align:left}
+.comboBtn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.comboBtn .ph{color:#475569}
+.comboBtn:hover{border-color:var(--sky)}
+.comboPanel{position:absolute;top:100%;left:0;margin-top:6px;min-width:100%;width:max-content;max-width:340px;background:#fff;border-radius:12px;box-shadow:0 12px 36px #0b2a5b33;border:1px solid var(--line);padding:8px;z-index:40}
+.comboPanel input{width:100%;margin-bottom:6px}
+.comboList{max-height:260px;overflow-y:auto;overscroll-behavior:contain}
+.opt{padding:8px 10px;border-radius:8px;font-size:13.5px;cursor:pointer}
+.opt:hover{background:#e8f6fc}.opt.on{background:#e3eefc;color:var(--blue);font-weight:600}.opt.none{color:var(--muted);cursor:default}
+.chip{border:0;font:inherit;color:inherit;cursor:pointer;text-align:left}
+.chip:hover{box-shadow:0 6px 18px #0857c322}
+.stat.click{cursor:pointer}.stat.click:hover{box-shadow:0 10px 26px #0857c326}
+.boPills{display:flex;gap:6px;margin:0 6px;flex-wrap:wrap;justify-content:flex-end}
+.pillBtn{border:0;cursor:pointer;font-family:inherit;font-size:11.5px}
+.pillBtn:hover{filter:brightness(.95)}
+.modal .tableWrap{max-height:none;flex:1}

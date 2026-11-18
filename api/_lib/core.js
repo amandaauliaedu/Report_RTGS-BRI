@@ -1,4 +1,4 @@
-import XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 
 const SHEET_ID = process.env.SHEET_ID || '1VH5vk5rT3sOhE-XP3zpxbmdfXiCmo2nSNnxA7daNcNc';
@@ -108,32 +108,69 @@ function filt(rows, q) {
     (!q.q || Object.values(r).join(' ').toLowerCase().includes(String(q.q).toLowerCase())));
 }
 
-function toPDF(res, title, cols, data) {
-  const d = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 30 });
+function toPDF(res, title, cols, data, size = 'A4', fs = 7.5) {
+  const d = new PDFDocument({ size, layout: 'landscape', margin: 30 });
   d.pipe(res);
   d.fontSize(14).fillColor('#0857C3').text(title);
   d.fontSize(8).fillColor('#64748b').text(`Dicetak ${new Date().toLocaleString('id-ID')} • ${data.length} baris`);
   let y = d.y + 8;
   const W = cols.reduce((s, c) => s + c[2], 0);
+  const cell = (txt, x, w, color) => d.fillColor(color).fontSize(fs).text(String(txt ?? ''), x + 2, y, { width: w - 4, height: fs + 3, ellipsis: true, lineBreak: false });
   const head = () => {
-    d.rect(30, y - 3, W, 15).fill('#0857C3');
+    d.rect(30, y - 3, W, fs + 9).fill('#0857C3');
     let x = 30;
-    cols.forEach(c => { d.fillColor('#fff').fontSize(7.5).text(c[1], x + 2, y, { width: c[2] - 4, height: 10, ellipsis: true, lineBreak: false }); x += c[2]; });
-    y += 15;
+    cols.forEach(c => { cell(c[1], x, c[2], '#ffffff'); x += c[2]; });
+    y += fs + 9;
   };
   const line = r => {
-    if (y > 550) { d.addPage(); y = 30; head(); }
+    if (y > d.page.height - 45) { d.addPage(); y = 30; head(); }
     let x = 30;
-    cols.forEach(c => {
-      d.fillColor(c[0] === 'Status' && COLOR[r.Status] ? COLOR[r.Status] : '#111827').fontSize(7.5)
-        .text(String(r[c[0]] ?? ''), x + 2, y, { width: c[2] - 4, height: 10, ellipsis: true, lineBreak: false });
-      x += c[2];
-    });
-    y += 15;
+    cols.forEach(c => { cell(r[c[0]], x, c[2], c[0] === 'Status' && COLOR[r.Status] ? COLOR[r.Status] : '#111827'); x += c[2]; });
+    y += fs + 7;
   };
   head(); data.forEach(line); d.end();
 }
 
+// Excel dengan template: header biru (#0857C3), teks putih tebal, border, baris selang-seling, header dibekukan + filter
+async function toXlsx(sheetName, cols, out) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Report RTGS Out - BRI Region 12 Surabaya';
+  const ws = wb.addWorksheet(sheetName, { views: [{ state: 'frozen', ySplit: 1 }] });
+  ws.columns = cols.map(c => ({ header: c[0], key: c[0], width: c[3] }));
+  const line = { style: 'thin', color: { argb: 'FFD0DCEE' } };
+  const border = { top: line, left: line, bottom: line, right: line };
+  const hr = ws.getRow(1);
+  hr.height = 26;
+  hr.eachCell(c => {
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0857C3' } };
+    c.font = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Calibri', size: 11 };
+    c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    c.border = border;
+  });
+  const argb = { Berhasil: 'FF16A34A', 'Gagal Dibelokkan': 'FFDC2626', 'Gagal Tidak Punya Rekening': 'FFEA580C' };
+  out.forEach((r, i) => {
+    const row = ws.addRow(Object.fromEntries(cols.map(c => {
+      let v = r[c[0]];
+      if (c[0] === 'Nominal') v = Number(String(v ?? '').replace(/[.,]\d{1,2}$/, '').replace(/[^\d]/g, '')) || 0;
+      return [c[0], v];
+    })));
+    const total = r['Branch Office'] === 'TOTAL';
+    row.eachCell({ includeEmpty: true }, (c, n) => {
+      c.border = border;
+      c.alignment = { vertical: 'middle' };
+      c.font = { name: 'Calibri', size: 10.5, bold: total };
+      if (total) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCEBFB' } };
+      else if (i % 2) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F6FD' } };
+      const key = cols[n - 1] && cols[n - 1][0];
+      if (key === 'Nominal') c.numFmt = '#,##0';
+      if (key === 'Status' && argb[c.value]) c.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: argb[c.value] } };
+    });
+  });
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: cols.length } };
+  return wb.xlsx.writeBuffer();
+}
+
+const DETAIL = [['Timestamp','Timestamp',85,20],['Tanggal Transaksi','Tanggal',60,16],['Branch Office','Branch Office',90,26],['Kode Uker','Kode Uker',40,12],['Unit Kerja','Unit Kerja',90,28],['Jenis Uker','Jenis',40,12],['Pengirim - Nomor Rekening','Pengirim - No Rek',90,22],['Pengirim - Nama Rekening','Pengirim - Nama',95,28],['Bank Tujuan','Bank Tujuan',90,24],['Penerima - Nomor Rekening','Penerima - No Rek',90,22],['Penerima - Nama Rekening','Penerima - Nama',95,28],['Nomor HP','Nomor HP',70,16],['Nominal','Nominal',70,18],['Status','Status',125,28]];
 
 export async function dataPayload() {
   const ctx = await getCtx();
@@ -141,44 +178,41 @@ export async function dataPayload() {
   return { rows, units: ctx.units.map(({ bo, uker, jenis }) => ({ bo, uker, jenis })), bos: ctx.bos, updated: new Date().toISOString() };
 }
 
-// q = query string (from, to, bo, uker, status, q, format, type, nocode); res = Node ServerResponse (Express / Vercel)
+// q = query string (from, to, bo, uker, status, q, format, type); res = Node ServerResponse (Express / Vercel)
 export async function sendExport(q, res) {
   const fmt = q.format === 'pdf' ? 'pdf' : 'xlsx';
   const ctx = await getCtx();
   const data = filt(await getRows(ctx), q);
+  const summary = q.type === 'summary';
   let cols, out, title, name;
 
-  if (q.type === 'summary') {
-    const units = ctx.units;
+  if (summary) {
     const map = {};
     const add = (bo, uker) => (map[`${bo}|${uker}`] ??= { 'Branch Office': bo, 'Unit Kerja': uker, Berhasil: 0, 'Gagal Dibelokkan': 0, 'Gagal Tidak Punya Rekening': 0 });
-    units.filter(u => (!q.bo || u.bo === q.bo) && (!q.uker || u.uker === q.uker)).forEach(u => add(u.bo, u.uker));
+    ctx.units.filter(u => (!q.bo || u.bo === q.bo) && (!q.uker || u.uker === q.uker)).forEach(u => add(u.bo, u.uker));
     data.filter(r => ctx.bos.includes(r['Branch Office'])).forEach(r => { const m = add(r['Branch Office'], r['Unit Kerja']); if (ST.includes(r.Status)) m[r.Status]++; });
     out = Object.values(map)
       .sort((a, b) => ctx.bos.indexOf(a['Branch Office']) - ctx.bos.indexOf(b['Branch Office']) || a['Unit Kerja'].localeCompare(b['Unit Kerja']))
       .map(m => ({ ...m, Total: ST.reduce((s, k) => s + m[k], 0) }));
     if (out.length) out.push({ 'Branch Office': 'TOTAL', 'Unit Kerja': '', ...Object.fromEntries([...ST, 'Total'].map(k => [k, out.reduce((s, r) => s + r[k], 0)])) });
-    cols = [['Branch Office', 'Branch Office', 170], ['Unit Kerja', 'Unit Kerja', 190], ['Berhasil', 'Berhasil', 65], ['Gagal Dibelokkan', 'Gagal Dibelokkan', 105], ['Gagal Tidak Punya Rekening', 'Gagal Tidak Punya Rekening', 170], ['Total', 'Total', 60]];
+    cols = [['Branch Office', 'Branch Office', 170, 28], ['Unit Kerja', 'Unit Kerja', 190, 32], ['Berhasil', 'Berhasil', 65, 12], ['Gagal Dibelokkan', 'Gagal Dibelokkan', 105, 18], ['Gagal Tidak Punya Rekening', 'Gagal Tidak Punya Rekening', 170, 28], ['Total', 'Total', 60, 10]];
     title = 'Report RTGS Out - Rekap per Unit Kerja' + (q.bo ? ` (${q.bo})` : '');
     name = 'Rekap_RTGS' + (q.bo ? '_' + q.bo : '');
   } else {
-    const w = { Timestamp: 95, 'Tanggal Transaksi': 62, 'Branch Office': 115, 'Kode Uker': 50, 'Unit Kerja': 135, 'Jenis Uker': 55, 'Bank Tujuan': 140, Status: 125 };
-    cols = LIVE_COLS.filter(c => !(q.nocode && c === 'Kode Uker')).map(c => [c, c === 'Tanggal Transaksi' ? 'Tanggal' : c, w[c]]);
-    out = data.map(r => Object.fromEntries(cols.map(c => [c[0], r[c[0]]])));
+    cols = DETAIL;
+    out = data;
     title = 'Report RTGS Out - Live Response' + (q.uker ? ` (${q.uker})` : q.bo ? ` (${q.bo})` : '');
     name = q.uker ? 'RTGS_' + q.uker : q.bo ? 'RTGS_' + q.bo : 'Live_Response_RTGS';
   }
-  const file = `${name}_${q.from || 'awal'}_${q.to || 'akhir'}`.replace(/[^\w-]+/g, '_');
+  const file = `${name}${q.status ? '_' + q.status : ''}_${q.from || 'awal'}_${q.to || 'akhir'}`.replace(/[^\w-]+/g, '_');
+
   if (fmt === 'pdf') {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${file}.pdf"`);
-    return toPDF(res, title, cols, out);
+    return toPDF(res, title, cols, out, summary ? 'A4' : 'A3', summary ? 7.5 : 7);
   }
-  const ws = XLSX.utils.json_to_sheet(out, { header: cols.map(c => c[0]) });
-  ws['!cols'] = cols.map(c => ({ wch: Math.max(14, c[2] / 5.5) }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, q.type === 'summary' ? 'Rekap' : 'Live Response');
-  res.setHeader('Content-Type', 'application/octet-stream');
+  const buf = await toXlsx(summary ? 'Rekap' : 'Live Response', cols, out);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${file}.xlsx"`);
-  res.end(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+  res.end(Buffer.from(buf));
 }
