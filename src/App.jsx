@@ -266,9 +266,9 @@ function MonitoringPage({ rows, units, bos }) {
       <Filters f={f} set={set} rows={rows} units={units} bos={bos} uker extra={<>
         <input className="search inline" placeholder="Cari BO atau unit kerja..." value={q} onChange={e => setQ(e.target.value)} />
         <span className="grow" />
-        <span className="muted" style={{ margin: 0 }}>Download semua:</span>
-        <button className="btn primary" onClick={() => dl({ ...f, format: 'xlsx', type: 'summary' })}><FileSpreadsheet size={15} /> Excel</button>
-        <button className="btn" onClick={() => dl({ ...f, format: 'pdf', type: 'summary' })}><FileText size={15} /> PDF</button>
+        <span className="muted" style={{ margin: 0 }}>Download data Live Response:</span>
+        <button className="btn primary" onClick={() => dl({ ...f, q: k, format: 'xlsx' })}><FileSpreadsheet size={15} /> Excel</button>
+        <button className="btn" onClick={() => dl({ ...f, q: k, format: 'pdf' })}><FileText size={15} /> PDF</button>
         <div className="legend" style={{ width: '100%' }}><b>Keterangan</b>
           {ST.map(s => <span className="lg" key={s}><i className={CLS[s]} />{s}</span>)}</div></>} />
       <div className="stats five">
@@ -292,7 +292,7 @@ function MonitoringPage({ rows, units, bos }) {
                     onClick={() => openRows(bo, s, { ...base, bo, status: s })}>{s}: {list.reduce((x, [, v]) => x + v[s], 0)}</motion.button>
                 ))}
               </div>
-              <Dl2 p={{ ...base, bo, type: 'summary' }} />
+              <Dl2 p={{ ...base, bo }} />
             </div>
             <AnimatePresence initial={false}>
               {open[bo] && (
