@@ -332,7 +332,10 @@ const tabs = [['home', 'Home', Home], ['live', 'Live Response', Radio], ['mon', 
 export default function App() {
   const [tab, setTab] = useState('home');
   const [state, setState] = useState({ rows: [], units: [], bos: [], error: '', updated: '--:--:--' });
-  const load = useCallback(() => fetch('/api/data').then(r => r.json()).then(d => {
+  const load = useCallback(() => fetch('/api/data').then(async r => {
+    const t = await r.text();
+    try { return JSON.parse(t); } catch { throw new Error(`API tidak membalas JSON (status ${r.status}). Pastikan folder api/ ikut ter-deploy.`); }
+  }).then(d => {
     const t = new Date().toLocaleTimeString('id-ID');
     d.error ? setState(s => ({ ...s, error: d.error })) : setState({ rows: d.rows, units: d.units, bos: d.bos, error: '', updated: t });
   }).catch(e => setState(s => ({ ...s, error: e.message }))), []);

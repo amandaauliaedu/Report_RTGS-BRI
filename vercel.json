@@ -1,0 +1,8 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/data.js": { "maxDuration": 30 },
+    "api/export.js": { "maxDuration": 60, "includeFiles": "node_modules/pdfkit/js/data/**" }
+  }
+}
