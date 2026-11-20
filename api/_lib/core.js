@@ -4,8 +4,7 @@ import PDFDocument from 'pdfkit';
 const SHEET_ID = process.env.SHEET_ID || '1VH5vk5rT3sOhE-XP3zpxbmdfXiCmo2nSNnxA7daNcNc';
 const RESPONSE_TAB = process.env.RESPONSE_TAB || 'Form Response';
 const UKER_TAB = process.env.UKER_TAB || 'Database_Uker';
-const COLS = ['Timestamp','Tanggal Transaksi','Branch Office','Kode Uker','Unit Kerja','Jenis Uker','Pengirim - Nomor Rekening','Pengirim - Nama Rekening','Bank Tujuan','Penerima - Nomor Rekening','Penerima - Nama Rekening','Nomor HP','Nominal','Status'];
-const LIVE_COLS = ['Timestamp','Tanggal Transaksi','Branch Office','Kode Uker','Unit Kerja','Jenis Uker','Bank Tujuan','Status'];
+const COLS = ['Timestamp','Tanggal Transaksi','Branch Office','Kode Uker','Unit Kerja','Jenis Uker','Nama Teller','Status','Nama Rekening Pengirim','Nomor Rekening Pengirim','Bank Tujuan','Nama Rekening Penerima','Nomor Rekening Penerima','Nomor Rekening BRI','Nominal','Nomor HP'];
 const ST = ['Berhasil', 'Gagal Dibelokkan', 'Gagal Tidak Punya Rekening'];
 const COLOR = { Berhasil: '#16a34a', 'Gagal Dibelokkan': '#dc2626', 'Gagal Tidak Punya Rekening': '#ea580c' };
 
@@ -86,9 +85,9 @@ async function getCtx() {
 // Samakan nama BO dan Unit Kerja di Form Response dengan Database_Uker
 async function getRows(ctx) {
   const [head, ...body] = await sheet(RESPONSE_TAB);
-  const idx = Object.fromEntries(head.map((h, i) => [h.trim(), i]));
+  const idx = Object.fromEntries(head.map((h, i) => [key(h), i]));
   return body
-    .map(r => Object.fromEntries(COLS.map(c => [c, (r[idx[c]] ?? '').trim()])))
+    .map(r => Object.fromEntries(COLS.map(c => [c, (r[idx[key(c)]] ?? '').trim()])))
     .filter(r => r.Timestamp || r.Status)
     .map(r => {
       const bo = ctx.boMap[keyBO(r['Branch Office'])] || r['Branch Office'];
@@ -170,7 +169,7 @@ async function toXlsx(sheetName, cols, out) {
   return wb.xlsx.writeBuffer();
 }
 
-const DETAIL = [['Timestamp','Timestamp',85,20],['Tanggal Transaksi','Tanggal',60,16],['Branch Office','Branch Office',90,26],['Kode Uker','Kode Uker',40,12],['Unit Kerja','Unit Kerja',90,28],['Jenis Uker','Jenis',40,12],['Pengirim - Nomor Rekening','Pengirim - No Rek',90,22],['Pengirim - Nama Rekening','Pengirim - Nama',95,28],['Bank Tujuan','Bank Tujuan',90,24],['Penerima - Nomor Rekening','Penerima - No Rek',90,22],['Penerima - Nama Rekening','Penerima - Nama',95,28],['Nomor HP','Nomor HP',70,16],['Nominal','Nominal',70,18],['Status','Status',125,28]];
+const DETAIL = [['Timestamp','Timestamp',74,20],['Tanggal Transaksi','Tanggal',58,16],['Branch Office','Branch Office',80,26],['Kode Uker','Kode Uker',38,12],['Unit Kerja','Unit Kerja',80,28],['Jenis Uker','Jenis',36,12],['Nama Teller','Nama Teller',70,24],['Status','Status',100,28],['Nama Rekening Pengirim','Nama Rek Pengirim',80,28],['Nomor Rekening Pengirim','No Rek Pengirim',82,22],['Bank Tujuan','Bank Tujuan',70,24],['Nama Rekening Penerima','Nama Rek Penerima',80,28],['Nomor Rekening Penerima','No Rek Penerima',82,22],['Nomor Rekening BRI','No Rek BRI',70,22],['Nominal','Nominal',62,18],['Nomor HP','Nomor HP',62,16]];
 
 export async function dataPayload() {
   const ctx = await getCtx();

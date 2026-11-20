@@ -6,9 +6,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const qs = o => new URLSearchParams(Object.fromEntries(Object.entries(o).filter(([, v]) => v))).toString();
 const dl = p => { window.location.href = '/api/export?' + qs(p); };
 const D = 'Tanggal Transaksi', BO = 'Branch Office', UK = 'Unit Kerja';
-const LIVE_COLS = ['Timestamp', D, BO, 'Kode Uker', UK, 'Jenis Uker', 'Bank Tujuan', 'Status'];
-const ALL_COLS = ['Timestamp', D, BO, 'Kode Uker', UK, 'Jenis Uker', 'Pengirim - Nomor Rekening', 'Pengirim - Nama Rekening', 'Bank Tujuan', 'Penerima - Nomor Rekening', 'Penerima - Nama Rekening', 'Nomor HP', 'Nominal', 'Status'];
-const MCOLS = LIVE_COLS.filter(c => c !== 'Kode Uker');
+const ALL_COLS = ['Timestamp', D, BO, 'Kode Uker', UK, 'Jenis Uker', 'Nama Teller', 'Status', 'Nama Rekening Pengirim', 'Nomor Rekening Pengirim', 'Bank Tujuan', 'Nama Rekening Penerima', 'Nomor Rekening Penerima', 'Nomor Rekening BRI', 'Nominal', 'Nomor HP'];
 const ST = ['Berhasil', 'Gagal Dibelokkan', 'Gagal Tidak Punya Rekening'];
 const CLS = { Berhasil: 'ok', 'Gagal Dibelokkan': 'bad', 'Gagal Tidak Punya Rekening': 'warn' };
 const HEX = { Berhasil: '#16a34a', 'Gagal Dibelokkan': '#dc2626', 'Gagal Tidak Punya Rekening': '#f97316' };
@@ -319,7 +317,7 @@ function MonitoringPage({ rows, units, bos }) {
           <Modal title={m.kind === 'bo' ? 'Branch Office' : m.kind === 'uker' ? 'Unit Kerja' : m.title}
             sub={m.kind === 'rows' ? <><span className={'pill ' + CLS[m.filter.status]}>{m.filter.status}</span> • {mrows.length} laporan{m.sub && m.card ? ' • ' + m.sub : ''}</> : m.kind === 'bo' ? `${tree.length} Branch Office` : `${all.length} Unit Kerja`}
             onClose={() => setM(null)} actions={dp && <DlBtns p={dp} />}>
-            {m.kind === 'rows' && <Table data={mrows} cols={MCOLS} />}
+            {m.kind === 'rows' && <Table data={mrows} />}
             {m.kind === 'bo' && <Grid head={['Branch Office', 'Jumlah Unit Kerja', ...ST]} rows={tree.map(([b, l]) => [b, l.length, ...ST.map(s => l.reduce((x, [, v]) => x + v[s], 0))])} />}
             {m.kind === 'uker' && <Grid head={['Branch Office', 'Unit Kerja', ...ST]} rows={tree.flatMap(([b, l]) => l.map(([u, v]) => [b, u, ...ST.map(s => v[s])]))} />}
           </Modal>
